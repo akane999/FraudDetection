@@ -1,0 +1,160 @@
+package com.millenium.credibanco.evaq.test;
+
+import java.sql.SQLException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.commons.dbcp.BasicDataSource;
+import org.apache.commons.dbutils.QueryRunner;
+import org.apache.commons.dbutils.handlers.ArrayHandler;
+import org.apache.commons.dbutils.handlers.ArrayListHandler;
+
+import com.millenium.credibanco.evaq.model.ParametrosEvaluadorQ;
+import com.millenium.credibanco.evaq.model.Tx;
+
+public class DbTools {
+	private BasicDataSource ds;
+	private QueryRunner runner;
+	SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+	SimpleDateFormat formatter1 = new SimpleDateFormat("dd/MM/yyyy hh:mm:ss");
+
+	// TODO Cambiar parametros de la conexion para poder conectarse
+
+	public DbTools() {
+		// ds = new PoolingDataSource();
+		ds = new BasicDataSource();
+		ds.setDriverClassName("org.postgresql.Driver");
+		ds.setUrl("jdbc:postgresql://192.168.72.15:5432/pruebas");
+		ds.setUsername("consulta_dwh");
+		ds.setPassword("consulta_dwh");
+		runner = new QueryRunner(ds);
+
+	}
+
+	public Tx getTx(Long trx_id) throws SQLException, ParseException {
+
+		Object[] objeto = runner.query(ds.getConnection(), " select tx.id,tx.codigocondicionpos,tx.fechatx,co.mcc,tx.modoentrada,tx.montotx,co.nombrecomercio,tx.ubicaciontrx,tx.pais,"
+				+ "tx.tarjeta_id,co.identificador,tx.portafolio_id,tx.aplicacion,tx.terminal,tx.presente,tx.nacional,tx.alerta " + " from credibanco.transaccion tx left join credibanco.comercio co on tx.comercio_id=co.id "
+				+ " where tx.id=?", new ArrayHandler(), trx_id);
+		Long id = (Long) objeto[0];
+		String codigocondicionpos = (String) objeto[1];
+		LocalDateTime fechatx = formatter.parse(objeto[2].toString()).toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+		String mcc = objeto[3].toString();
+		String modoentrada = (String) objeto[4];
+		double montotx = (double) objeto[5];
+		String nombreComercio = (String) objeto[6];
+		String ubicacionTrx = (String) objeto[7];
+		String pais = (String) objeto[8];
+		String idTarjeta = String.valueOf((Long) objeto[9]);
+		String idComercio = (String)objeto[10];
+		String portafolio = String.valueOf((Long) objeto[11]);
+		String nombreaplicacion=(String)objeto[12];
+		String terminal=(String)objeto[13];
+		String presente=(String)objeto[14];
+		String nacional=(String)objeto[15];
+		String alerto=(String)objeto[16];
+		
+		
+		
+		Tx transaccion = new Tx(id, codigocondicionpos, fechatx, mcc, modoentrada, montotx, nombreComercio, ubicacionTrx, pais, idTarjeta, 
+				idComercio,portafolio,nombreaplicacion,terminal,presente,nacional,alerto);
+//		System.out.println("trx i com "+transaccion.getIdComercio());
+
+		return transaccion;
+
+	}
+
+	public List<Tx> getHistorico(Long trx_id) throws SQLException, ParseException {
+		// runner = new QueryRunner(ds);
+		List<Object[]> rs = runner.query(ds.getConnection(), " select tx.id,tx.codigocondicionpos,tx.fechatx,co.mcc,tx.modoentrada,tx.montotx,co.nombrecomercio,tx.ubicaciontrx,tx.pais,"
+				+ "tx.tarjeta_id,co.identificador,tx.portafolio_id,tx.aplicacion,tx.terminal " + " from credibanco.historicotrx tx left join credibanco.comercio co on tx.comercio_id=co.id "
+				+ " left join credibanco.transaccion t on t.tarjeta_id = tx.tarjeta_id " + " where t.id=?", new ArrayListHandler(), trx_id);
+
+		List<Tx> historico = new ArrayList<Tx>();
+
+		for (int i = 0; i < rs.size(); i++) {
+			Object[] objeto = rs.get(i);
+			Long id = (Long) objeto[0];
+			String codigocondicionpos = (String) objeto[1];
+			LocalDateTime fechatx = formatter.parse(objeto[2].toString()).toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+			String mcc =(String)objeto[3];
+			String modoentrada = (String) objeto[4];
+			double montotx = (double) objeto[5];
+			String nombreComercio = (String) objeto[6];
+			String ubicacionTrx = (String) objeto[7];
+			String pais = (String) objeto[8];
+			String idTarjeta = String.valueOf((Long) objeto[9]);
+			String idComercio = (String)objeto[10];
+			String portafolio = String.valueOf((Long) objeto[11]);
+			String nombreaplicacion=(String)objeto[12];
+			String terminal=(String)objeto[13];
+			String presente=null;
+			String nacional=null;
+			String alerto=null;
+
+
+			Tx transaccion = new Tx(id, codigocondicionpos, fechatx, mcc, modoentrada, montotx, nombreComercio, ubicacionTrx, pais, 
+					idTarjeta, idComercio,portafolio,nombreaplicacion,terminal,presente,nacional,alerto);
+			historico.add(transaccion);
+		}
+
+		return historico;
+	}
+
+	public List<ParametrosEvaluadorQ> getParametros(Boolean presente, Boolean nacional1, String tipoevaluacion) throws SQLException {
+		List<ParametrosEvaluadorQ> parametros = new ArrayList<ParametrosEvaluadorQ>();
+		List<Object[]> rs=new ArrayList<Object[]>();
+		if (presente) {
+			rs = runner.query(ds.getConnection(), "select id,tipo,tipoorigen,nombre,descripcion,presencial,nacional,activa,tiporevision,"
+					+ "alto,medio,bajo,muyalto,muybajo,rangomaxalto,rangomaxbajo,rangomaxmedio,rangomaxmuyalto," + " rangomaxmuybajo,rangominalto,rangominbajo,"
+					+ " rangominmedio,rangominmuyalto,rangominmuybajo,tipoevaluacion from credibanco.parametrosevaluadorq where tipo like 'R%'"
+					+ " and activa='t' and presencial=? and nacional=? and tipoevaluacion=?", new ArrayListHandler(), presente, nacional1, tipoevaluacion);
+		} else {
+			rs = runner.query(ds.getConnection(), "select id,tipo,tipoorigen,nombre,descripcion,presencial,nacional,activa,tiporevision,"
+					+ "alto,medio,bajo,muyalto,muybajo,rangomaxalto,rangomaxbajo,rangomaxmedio,rangomaxmuyalto,rangomaxmuybajo,rangominalto,rangominbajo,"
+					+ " rangominmedio,rangominmuyalto,rangominmuybajo,tipoevaluacion from credibanco.parametrosevaluadorq where tipo like 'R%' and activa='t' and presencial=?  and tipoevaluacion=?",
+					new ArrayListHandler(), presente, tipoevaluacion);
+
+		}
+		for (Object[] objeto : rs) {
+			Long id = (Long) objeto[0];
+			String tipo = (String) objeto[1]; // q, regla
+			String tipoOrigen = (String) objeto[2]; // qX, reglaX
+			String nombre = (String) objeto[3];
+			String descripcion = (String) objeto[4];
+			Boolean presencial = (Boolean) objeto[5];
+			Boolean nacional = (Boolean) objeto[6];
+			Boolean activa = (Boolean) objeto[7];
+			String tipoRevision = (String) objeto[8]; // rango, valor
+			Integer alto = (Integer) objeto[9];
+			Integer medio = (Integer) objeto[10];
+			Integer bajo = (Integer) objeto[11];
+			Integer muyAlto = (Integer) objeto[12];
+			Integer muyBajo = (Integer) objeto[13];
+			Double rangoMaxAlto = (Double) objeto[14];
+			Double rangoMaxBajo = (Double) objeto[15];
+			Double rangoMaxMedio = (Double) objeto[16];
+			Double rangoMaxMuyAlto = (Double) objeto[17];
+			Double rangoMaxMuyBajo = (Double) objeto[18];
+			Double rangoMinAlto = (Double) objeto[19];
+			Double rangoMinBajo = (Double) objeto[20];
+			Double rangoMinMedio = (Double) objeto[21];
+			Double rangoMinMuyAlto = (Double) objeto[22];
+			Double rangoMinMuyBajo = (Double) objeto[23];
+			ParametrosEvaluadorQ parametro = new ParametrosEvaluadorQ(id, tipo, tipoOrigen, nombre, descripcion, presencial, nacional, activa, tipoRevision, muyAlto, alto, medio, bajo, muyBajo,
+					rangoMinMuyAlto, rangoMaxMuyAlto, rangoMinAlto, rangoMaxAlto, rangoMinMedio, rangoMaxMedio, rangoMinBajo, rangoMaxBajo, rangoMinMuyBajo, rangoMaxMuyBajo);
+			parametros.add(parametro);
+		}
+
+		return parametros;
+	}
+
+	public void close() throws SQLException {
+		ds.close();
+	}
+
+}

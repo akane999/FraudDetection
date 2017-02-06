@@ -1,0 +1,25 @@
+package com.millenium.credibanco.evaq.test;
+
+import java.sql.SQLException;
+import java.text.ParseException;
+import java.util.List;
+
+import com.millenium.credibanco.evaq.engine.EvaluadorEmisorModelo;
+import com.millenium.credibanco.evaq.model.ParametrosEvaluadorQ;
+import com.millenium.credibanco.evaq.model.Tx;
+
+public class PruebasFinales {
+
+	public static void main(String[] args) throws SQLException, ParseException {
+		DbTools db= new DbTools();
+		Tx tx1 =db.getTx(4610618L);
+		List<Tx> historico=db.getHistorico(4610618L);
+		List<ParametrosEvaluadorQ> parametros = db.getParametros(false, true, "EMISOR");
+		//System.out.println(historico.size());
+		//System.out.println(tx1.getIdComercio());
+		EvaluadorEmisorModelo.ejecutarEvaluador(historico, tx1, parametros);
+		
+
+	}
+
+}

@@ -1,0 +1,363 @@
+package com.millenium.credibanco.evaq.engine;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.apache.commons.math3.stat.StatUtils;
+import org.apache.commons.math3.util.FastMath;
+
+import com.millenium.credibanco.evaq.exception.MicroCredibancoException;
+import com.millenium.credibanco.evaq.model.LlaveValor;
+import com.millenium.credibanco.evaq.model.ParametrosEvaluadorQ;
+import com.millenium.credibanco.evaq.model.RespuestaEvaluador;
+import com.millenium.credibanco.evaq.model.Tx;
+import com.millenium.credibanco.evaq.util.ServiceCredibancoUtil;
+import com.millenium.credibanco.weka.adquiriente.Adq_no_presente;
+import com.millenium.credibanco.weka.adquiriente.Adq_presente;
+
+import weka.core.Attribute;
+import weka.core.DenseInstance;
+import weka.core.Instances;
+
+public class EvaluadorAdquirienteModelo {
+
+	public static RespuestaEvaluador ejecutarEvaluador(List<Tx> listHistorico, Tx alerta, List<ParametrosEvaluadorQ> listParametrosEvaluadorQ, List<Tx> listTx) {
+
+		listHistorico = listHistorico.stream().filter( tx -> tx.getFechaTx().isBefore( alerta.getFechaTx() ) ).collect( Collectors.toList() );
+		
+		if( alerta.getNombreAplicacion().equals( "VRM" ) && ( alerta.getPortafolio().equals( "12" ) || alerta.getPortafolio().equals( "17" ) ) ){
+			alerta.setFechaTx( alerta.getFechaTx().minusHours( -5l ) );
+		}
+		
+		if( alerta.getNombreAplicacion().equals("VRM") && alerta.getPortafolio().equals( "17" )  ){
+			int USD_COP = Integer.valueOf( System.getProperty("evaluador.usd_cop", "3000") );
+			alerta.setMontotx( alerta.getMontotx()*USD_COP );
+		}
+		
+		System.out.println( "===ALERTA A EVALUAR: id " + alerta.getId() + " con " + listParametrosEvaluadorQ.size() +" ParametrosEvaluador===" );
+		System.out.println( alerta.toString() );
+		
+		boolean isError=false;
+		List<LlaveValor> listRespuestaEvaluador = new ArrayList<LlaveValor>();
+		for (ParametrosEvaluadorQ parametroEvaluador : listParametrosEvaluadorQ) {
+
+			ServiceCredibancoUtil.printParametrosEvaluador(parametroEvaluador, "Modelo");
+
+			if( parametroEvaluador.getTipo().indexOf( "R" )!=-1 ){
+				try{
+					LlaveValor lv = evaluarRs( listHistorico, alerta, parametroEvaluador );
+					listRespuestaEvaluador.add( lv );
+				}catch( Exception e ){
+					System.out.println( "SE DETECTA UNA EXCEPCIÓN" );
+					e.printStackTrace();
+					LlaveValor q = new LlaveValor( parametroEvaluador.getTipoOrigen(), "-1", "N/A" );
+					q.setDetalleError( e.getMessage() );
+					listRespuestaEvaluador.add( q );
+					isError=true;
+				}
+			}else{
+				System.out.println( "No implementado" );
+			}
+
+		}
+
+		System.out.println("Id Alerta: " + alerta.getId());
+		for (LlaveValor llaveValor : listRespuestaEvaluador) {
+			System.out.println("Nombre R : " + llaveValor.getLlave() + "  Valor r: " + llaveValor.getValor());
+		}
+		
+		RespuestaEvaluador respuestaEvaluador = new RespuestaEvaluador();
+		respuestaEvaluador.setIdAlerta(alerta.getId());
+		
+		if( !isError ){
+			// Modelo Adquiriente
+			Map<String, String> evalModelo =null;
+			String nivelRiesgo="";
+			try {
+				
+				double[] valores = listRespuestaEvaluador.stream().mapToDouble( d -> Double.valueOf( d.getValor() ) ).toArray();
+				// DEBEN SER 6 REGLAS
+				Instances data = new Instances(
+						"resultRs"
+						, new ArrayList<Attribute>( Arrays.asList(
+								new Attribute("regla1")
+								,new Attribute("regla2")
+								,new Attribute("regla3")
+								,new Attribute("regla4")
+								,new Attribute("regla5")
+								,new Attribute("regla6")))
+							, 0 );
+				data.add( new DenseInstance(1.0,  valores ) );
+				
+				if( alerta.getPresente().equals("SI") ){ // Caso PRESENTE-NACIONAL
+					evalModelo = new Adq_presente().evaluar(data);
+				}else{  // caso NO PRESENTE
+					evalModelo = new Adq_no_presente().evaluar(data);
+				}
+				
+				nivelRiesgo = evalModelo.get("RiesgoVotacion").toUpperCase();
+			} catch (Exception e) {
+				e.printStackTrace();
+				nivelRiesgo = e.getMessage();
+			}
+	
+			respuestaEvaluador.setRespuestaModelo( evalModelo );
+			respuestaEvaluador.setNivelRiesgo( nivelRiesgo );
+			
+		}else{
+			Map<String,String> rm = new HashMap<String, String>();
+			rm.put("resultado", "con -1");
+			respuestaEvaluador.setRespuestaModelo( rm );
+			respuestaEvaluador.setNivelRiesgo( "N/A" );
+		}
+		
+		respuestaEvaluador.setResultadosQ( listRespuestaEvaluador );
+		return respuestaEvaluador;
+	}
+
+	private static LlaveValor evaluarRs(List<Tx> listHistoricoSinalerta, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		if (parametroEvaluador.getTipo().equals("R1")) {
+			return (evaluadorR1(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+		if (parametroEvaluador.getTipo().equals("R2")) {
+			return (evaluadorR2(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+		if (parametroEvaluador.getTipo().equals("R3")) {
+			return (evaluadorR3(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+		if (parametroEvaluador.getTipo().equals("R4")) {
+			return (evaluadorR4(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+		if (parametroEvaluador.getTipo().equals("R5")) {
+			return (evaluadorR5(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+		if (parametroEvaluador.getTipo().equals("R6")) {
+			return (evaluadorR6(listHistoricoSinalerta, alerta, parametroEvaluador));
+		}
+
+		System.out.println( "Tipo "+ parametroEvaluador.getTipo() + " NO programada"  );
+		return null;
+	}
+
+
+	private static LlaveValor evaluadorR6(List<Tx> listHistoricos, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		// 6)	Cantidad de transacciones en el día supera el promedio día que presenta el comercio.*
+
+		Long trxdia = listHistoricos.stream()
+				.filter(tx -> ( alerta.getDaytx().equals(tx.getDaytx()) && !("FRAUDE".equals(tx.getEstadoTrx())) ))
+				.collect(Collectors.counting());
+
+		double[] trxbyDay = listHistoricos.stream()
+				.filter( tx-> ( !alerta.getDaytx().equals(tx.getDaytx()) && !("FRAUDE".equals(tx.getEstadoTrx())) ) )
+				.collect(Collectors.groupingBy(Tx::getDaytx, Collectors.counting()))
+				.values().stream().mapToDouble(d -> d).toArray();
+		
+		double mean = StatUtils.mean(trxbyDay);
+		double std = FastMath.sqrt(StatUtils.variance(trxbyDay));
+		if( Double.isNaN( mean ) ){
+			mean = 0;
+			std = 0;
+		}
+		
+		if( std==0 )
+			std=1;
+		
+		long score = Math.abs( Math.round((trxdia - mean) / std) );
+
+		return rango(parametroEvaluador, score);
+	}
+
+	private static LlaveValor evaluadorR5(List<Tx> listHistoricos, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		//El monto de la trx alertada se encuentran en el promedio de facturación del comercio en los últimos seis meses. (Tomar en cuenta desde el mes 2 al 6)
+
+		double montoTx = alerta.getMontotx();
+		LocalDateTime fechaBotton = alerta.getFechaTx().minusMonths(5);
+		LocalDateTime fechaTop = alerta.getFechaTx().minusMonths(1);
+
+		double[] montoByTx = listHistoricos
+				.stream()
+				.filter( tx-> ( !("FRAUDE".equals(tx.getEstadoTrx())) && tx.getFechaTx().isAfter( fechaBotton ) && tx.getFechaTx().isBefore( fechaTop )) )
+				.mapToDouble( tx->tx.getMontotx() ).toArray();
+
+		double mean = StatUtils.mean( montoByTx );
+		double std = FastMath.sqrt(StatUtils.variance( montoByTx ));
+		if( montoByTx.length==0 ){
+			mean = 0;
+			std = 0;
+		}
+		
+		if( std==0 )
+			std=1;
+		
+		long score = Math.abs( Math.round(( montoTx - mean ) / std) );
+		
+		return rango(parametroEvaluador, score);
+	}
+	
+
+	private static Map<String,Long> modoEntradaRiesgos;
+	static{
+		modoEntradaRiesgos = new HashMap<String, Long>();
+		modoEntradaRiesgos.put("021", new Long( 100l) );
+		modoEntradaRiesgos.put("012", new Long( 80l) );
+		modoEntradaRiesgos.put("010", new Long( 50l) );
+		modoEntradaRiesgos.put("080", new Long( 50l) );
+		modoEntradaRiesgos.put("null", new Long( 50l) );
+		modoEntradaRiesgos.put("017", new Long( 30l) );
+		modoEntradaRiesgos.put("051", new Long( 30l) );
+		modoEntradaRiesgos.put("071", new Long( 30l) );
+	}
+	private static LlaveValor evaluadorR4(List<Tx> listHistoricos, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		//  Código de entrada mas riesgoso
+		
+		if( alerta.getModoentrada()==null || alerta.getModoentrada().trim().isEmpty() ){
+			throw new MicroCredibancoException( "Alerta " + alerta.getId() + " NO tiene modo de entrada 'modoentrada'" );
+		}
+		
+		Long score = modoEntradaRiesgos.get( alerta.getModoentrada().trim() );
+		if( score==null ){
+			score= 20l;
+		}
+		return rango(parametroEvaluador, score);
+	}
+	
+	
+	private static Map<String,Long> codeRiesgos;
+	static{
+		codeRiesgos = new HashMap<String, Long>();
+		codeRiesgos.put("057", new Long( 100l) );
+		codeRiesgos.put("058", new Long( 100l) );
+		codeRiesgos.put("200", new Long( 100l) );
+		codeRiesgos.put("254", new Long( 100l) );
+		codeRiesgos.put("909", new Long( 100l) );
+		codeRiesgos.put("903", new Long( 100l) );
+		codeRiesgos.put("206", new Long( 100l) );
+		codeRiesgos.put("902", new Long( 80l) );
+		codeRiesgos.put("055", new Long( 80l) );
+		codeRiesgos.put("076", new Long( 50l) );
+		codeRiesgos.put("059", new Long( 50l) );
+		codeRiesgos.put("205", new Long( 50l) );
+		codeRiesgos.put("001", new Long( 30l) );
+	}
+	private static LlaveValor evaluadorR3(List<Tx> listHistoricos, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		// Códigos de respuesta que indican mayor riesgo
+		if( alerta.getReponseCode()==null || alerta.getReponseCode().trim().isEmpty() ){
+			throw new MicroCredibancoException( "Alerta " + alerta.getId() + " NO tiene código de respuesta 'responseCode'" );
+		}
+		
+		Long score = codeRiesgos.get( alerta.getReponseCode().trim() );
+		if( score==null ){
+			score= 20l;
+		}
+		return rango(parametroEvaluador, score);
+	}
+
+
+	private static LlaveValor evaluadorR2(List<Tx> listHistoricos, final Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		// Horas de mayor fraude
+		
+		if( alerta.getFechaTx()==null ){
+			throw new MicroCredibancoException( "Alerta " + alerta.getId() + " NO tiene fecha de transacción" ); 
+		}
+		
+		int hora = alerta.getFechaTx().getHour();
+		long score=100l;
+		switch ( hora ) {
+		case 6:case 7:case 8:case 9:case 11:case 15:case 16:
+			score=100l;
+			break;
+		case 0:case 1:case 3:case 10:case 13:case 14:case 17:case 18:case 22:
+			score=50l;
+		case 2:case 4:case 5:case 12:case 19:case 20:case 21:case 23:
+			score=30;
+		default:
+			break;
+		}
+		return rango(parametroEvaluador, score);
+	}
+
+	
+	private static LlaveValor evaluadorR1(List<Tx> listHistoricos, Tx alerta, ParametrosEvaluadorQ parametroEvaluador) throws MicroCredibancoException{
+		// FIID Riesgosos que han indicado fraude
+		
+		if( listHistoricos.size()==0 ){
+			throw new MicroCredibancoException( "Alerta " + alerta.getId() + " NO tiene histórico" );	
+		}
+		
+		Long score = 100l;
+		String fiid=alerta.getFiid();
+		if( fiid == null ){
+			throw new MicroCredibancoException( "Alerta " + alerta.getId() + " NO tiene FIID" ); 
+		}
+		fiid=fiid.trim();
+		
+		if( fiid.equals( "0003" ) || fiid.equals( "0090" ) ){
+			score=100l;
+		}else if( fiid.equals( "0023" ) || fiid.equals( "1001" ) ){
+			score=80l;
+		}else if( fiid.equals( "VISA" ) || fiid.equals( "0019" ) ){
+			score=50l;
+		}else if( fiid.equals( "0014" ) || fiid.equals( "0001" ) ){
+			score=30l;
+		}else{
+			score=20l;
+		}
+		
+		return rango(parametroEvaluador, score);
+	}
+
+	public static LlaveValor rango(ParametrosEvaluadorQ parametroEvaluador, long score) throws MicroCredibancoException {
+
+		LlaveValor q = new LlaveValor();
+
+		String valorq = "-1";
+		String riesgo = "-1";
+
+		try{ 
+			if (score >= parametroEvaluador.getRangoMinMuyAlto() && score <= parametroEvaluador.getRangoMaxMuyAlto()) {
+				
+				valorq = parametroEvaluador.getMuyAlto().toString();
+				riesgo = "MA";
+
+			} else if (score >= parametroEvaluador.getRangoMinAlto() && score <= parametroEvaluador.getRangoMaxAlto()) {
+
+				valorq = parametroEvaluador.getAlto().toString();
+				riesgo = "A";
+
+			} else if (score >= parametroEvaluador.getRangoMinMedio() && score <= parametroEvaluador.getRangoMaxMedio()) {
+
+				valorq = parametroEvaluador.getMedio().toString();
+				riesgo = "M";
+
+			} else if (score >= parametroEvaluador.getRangoMinBajo() && score <= parametroEvaluador.getRangoMaxBajo()) {
+
+				valorq = parametroEvaluador.getBajo().toString();
+				riesgo = "B";
+
+			} else if ( score <= parametroEvaluador.getRangoMaxMuyBajo() ) {
+				valorq = parametroEvaluador.getMuyBajo().toString();
+				riesgo = "MB";
+			}
+			
+			if( valorq.equals( "-1" ) && riesgo.equals( "-1" ) ){
+				throw new Exception();
+			}
+			
+			
+		}catch(Exception e){
+			throw new MicroCredibancoException("Score en rango desconocido: id_parametro:"+ parametroEvaluador.getId( )+" valor:"+score + " , " +e.getMessage() );
+		}
+
+		q.setLlave(parametroEvaluador.getTipoOrigen() );
+		q.setValor(valorq);
+		q.setRiesgo(riesgo);
+
+		return q;
+
+	}
+}

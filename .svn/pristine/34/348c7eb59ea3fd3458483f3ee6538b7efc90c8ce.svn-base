@@ -1,0 +1,79 @@
+listenerConfigurations:
+ -
+  id: "msf4j-http"
+  host: "0.0.0.0"
+  port: 9001
+  bossThreadPoolSize: 2
+  workerThreadPoolSize: 300
+  execHandlerThreadPoolSize: 150
+  parameters:
+    -
+     name: "execThreadPoolSize"
+     value: 150
+    -
+     name: "modelo.emisor.nopresente.c1"
+     value: ./weka-modelo/emisor/No_Presente/FUZZYNN.model
+    -
+     name: "modelo.emisor.nopresente.c2"
+     value: ./weka-modelo/emisor/No_Presente/DECISION_TABLE.model
+    -
+     name: "modelo.emisor.nopresente.c3"
+     value: ./weka-modelo/emisor/No_Presente/J48.model
+    -
+     name: "modelo.emisor.nopresente.c4"
+     value: ./weka-modelo/emisor/No_Presente/NAIVE_BAYES.model
+    - 
+     name: "modelo.emisor.presente.c1"
+     value: ./weka-modelo/emisor/Presente_Nacional/DECISION_TABLE.model
+    -     
+     name: "modelo.emisor.presente.c2"
+     value: ./weka-modelo/emisor/Presente_Nacional/J48.model
+    -     
+     name: "modelo.emisor.presente.c3"
+     value: ./weka-modelo/emisor/Presente_Nacional/MULTILAYER_PERCEPTRON.model
+    -  
+     name: "modelo.emisor.presente.c4"
+     value: ./weka-modelo/emisor/Presente_Nacional/NAIVE_BAYES.model
+    -  
+     name: "modelo.emisor.internacional.c1"
+     value: ./weka-modelo/emisor/Presente_Internacional/DECISION_TABLE.model
+    -  
+     name: "modelo.emisor.internacional.c2"
+     value: ./weka-modelo/emisor/Presente_Internacional/MULTIPLAYER_PERCEPTRON.model
+    -  
+     name: "modelo.emisor.internacional.c3"
+     value: ./weka-modelo/emisor/Presente_Internacional/NAIVE_BAYES.model
+    -  
+     name: "modelo.emisor.internacional.c4"
+     value: ./weka-modelo/emisor/Presente_Internacional/ONE_R.model
+    -  
+     name: "modelo.adquiriente.no_presente.c1"
+     value: ./weka-modelo/adquiriente/No_Presente/FUZZY_ROUGH_NN.model
+    -  
+     name: "modelo.adquiriente.no_presente.c2"
+     value: ./weka-modelo/adquiriente/No_Presente/IBK.model
+    -  
+     name: "modelo.adquiriente.no_presente.c3"
+     value: ./weka-modelo/adquiriente/No_Presente/JRIP.model
+    -  
+     name: "modelo.adquiriente.no_presente.c4"
+     value: ./weka-modelo/adquiriente/No_Presente/RAMDOM_FOREST.model
+    -  
+     name: "modelo.adquiriente.presente.c1"
+     value: ./weka-modelo/adquiriente/Presente/FUZZY_ROUGH_NN.model
+    -  
+     name: "modelo.adquiriente.presente.c2"
+     value: ./weka-modelo/adquiriente/Presente/J48.model
+    -  
+     name: "modelo.adquiriente.presente.c3"
+     value: ./weka-modelo/adquiriente/Presente/JRip.model
+    -  
+     name: "modelo.adquiriente.presente.c4"
+     value: ./weka-modelo/adquiriente/Presente/NAIVE_BAYES.model 
+
+     
+     
+     
+     
+     
+     
